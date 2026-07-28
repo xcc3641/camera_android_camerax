@@ -484,14 +484,31 @@ class AndroidCameraCameraX extends CameraPlatform {
       outputImageFormat: _imageAnalysisOutputImageFormat,
     );
 
-    // Bind configured UseCases to ProcessCameraProvider instance & mark Preview
-    // instance as bound but not paused. Video capture is bound at first use
-    // instead of here.
-    camera = await processCameraProvider!.bindToLifecycle(cameraSelector!, <UseCase>[
-      preview!,
-      imageCapture!,
-      imageAnalysis!,
-    ]);
+    // CocoCut patch: bind VideoCapture up front instead of at first use.
+    //
+    // Upstream binds VideoCapture inside startVideoCapturing and unbinds it in
+    // stopVideoRecording, so every shutter press reconfigures the capture
+    // session and the preview visibly stalls. Binding it here — and skipping
+    // the unbind at stop — moves that cost to camera start-up.
+    //
+    // The third slot is VideoCapture instead of ImageAnalysis: CameraX only
+    // guarantees three concurrent use cases, and Preview + ImageCapture +
+    // VideoCapture is the documented combination. ImageAnalysis still binds on
+    // demand in _configureImageAnalysis, which now swaps VideoCapture out.
+    //
+    // LEGACY-level devices do not support that trio at all, so fall back to
+    // upstream's layout rather than failing to open the camera.
+    try {
+      camera = await processCameraProvider!.bindToLifecycle(
+        cameraSelector!,
+        <UseCase>[preview!, imageCapture!, videoCapture!],
+      );
+    } catch (_) {
+      camera = await processCameraProvider!.bindToLifecycle(
+        cameraSelector!,
+        <UseCase>[preview!, imageCapture!, imageAnalysis!],
+      );
+    }
     await _updateCameraInfoAndLiveCameraState(_flutterSurfaceTextureId);
     previewInitiallyBound = true;
     _previewIsPaused = false;
@@ -1310,8 +1327,8 @@ class AndroidCameraCameraX extends CameraPlatform {
       );
     }
 
-    await _unbindUseCaseFromLifecycle(videoCapture!);
-
+    // CocoCut patch: keep VideoCapture bound so the next shutter press does not
+    // pay for another session reconfiguration. See createCameraWithSettings.
     if (event.hasError) {
       final int errorCode = event.error;
       throw CameraException(
@@ -1396,6 +1413,12 @@ class AndroidCameraCameraX extends CameraPlatform {
 
   /// Configures the [imageAnalysis] instance for image streaming.
   Future<void> _configureImageAnalysis(int cameraId) async {
+    // CocoCut patch: VideoCapture now holds the third use-case slot from
+    // camera start-up, so give it up before ImageAnalysis takes one. Without
+    // this the bind asks CameraX for four concurrent use cases, which it does
+    // not guarantee — in practice the stream config is re-solved and the
+    // preview/recording rotation comes back wrong.
+    await _unbindUseCaseFromLifecycle(videoCapture!);
     await _bindUseCaseToLifecycle(imageAnalysis!, cameraId);
 
     // Set target rotation to default CameraX rotation only if capture

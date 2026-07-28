@@ -108,3 +108,34 @@ For more information on contributing to this plugin, see [`CONTRIBUTING.md`](CON
 [12]: https://developer.android.com/reference/android/Manifest.permission#FOREGROUND_SERVICE_CAMERA
 [13]: https://developer.android.com/reference/android/Manifest.permission#READ_EXTERNAL_STORAGE
 [148013]: https://github.com/flutter/flutter/issues/148013
+
+---
+
+## Fork notes (xcc3641)
+
+Patched copy of `camera_android_camerax` used by CocoCut (flutter_yige).
+
+**Why:** upstream binds the `VideoCapture` use case inside `startVideoCapturing`
+and unbinds it again in `stopVideoRecording`, so every shutter press
+reconfigures the CameraX capture session and the preview visibly stalls.
+Measured on a Pixel 8 Pro (Android 17), `recording_start_ms` was 436–511 ms and
+did not improve on repeat presses. With `VideoCapture` bound from camera
+start-up it is 33–60 ms.
+
+**The patch** (one file, `lib/src/android_camera_camerax.dart`):
+
+1. `createCameraWithSettings` binds `VideoCapture` instead of `ImageAnalysis` as
+   the third use case, with a fallback to upstream's layout for LEGACY devices
+   that cannot do Preview + ImageCapture + VideoCapture.
+2. `stopVideoRecording` no longer unbinds `VideoCapture`.
+3. `_configureImageAnalysis` unbinds `VideoCapture` first, so image streaming
+   still only ever asks CameraX for three concurrent use cases.
+
+Point 3 matters: asking for four use cases makes CameraX re-solve the stream
+configuration and the preview/recording rotation comes back wrong.
+
+**Upstream status:** `main` still has all three behaviours. flutter/flutter#143049
+reports the same symptom and was closed without a root cause.
+
+**Upgrading:** replace everything with the new pub release on top of the
+pristine import commit, then re-apply the patch commit.
