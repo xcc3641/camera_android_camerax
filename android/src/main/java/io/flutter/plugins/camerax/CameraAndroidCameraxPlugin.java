@@ -39,6 +39,9 @@ public final class CameraAndroidCameraxPlugin implements FlutterPlugin, Activity
   public void onDetachedFromEngine(@NonNull FlutterPluginBinding binding) {
     if (proxyApiRegistrar != null) {
       proxyApiRegistrar.setIgnoreCallsToDart(true);
+      // Before the engine goes away: a preview still bound would keep pushing frames into a
+      // live SurfaceProducer and crash with "FlutterJNI is not attached to native".
+      proxyApiRegistrar.releasePreviewSurfaces();
       proxyApiRegistrar.tearDown();
       proxyApiRegistrar.getInstanceManager().stopFinalizationListener();
       proxyApiRegistrar = null;
