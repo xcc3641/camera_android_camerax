@@ -140,6 +140,12 @@ class PreviewProxyApi extends PigeonApiPreview {
       @NonNull TextureRegistry.SurfaceProducer surfaceProducer,
       @NonNull SystemServicesManager systemServicesManager) {
     return request -> {
+      // A request posted before releaseAllSurfaceProducers() can still land afterwards; the
+      // released producer would build a fresh ImageReader nobody ever closes.
+      if (!surfaceProducers.containsValue(surfaceProducer)) {
+        request.willNotProvideSurface();
+        return;
+      }
       // Set callback for surfaceProducer to invalidate Surfaces that it produces when they
       // get destroyed.
       surfaceProducer.setCallback(
