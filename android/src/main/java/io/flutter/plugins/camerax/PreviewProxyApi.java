@@ -92,6 +92,27 @@ class PreviewProxyApi extends PigeonApiPreview {
             + " camera preview has not yet been initialized.");
   }
 
+  /**
+   * Releases every SurfaceProducer still held, detaching it from its Preview first.
+   *
+   * <p>Called when the plugin detaches from the engine. If the Dart side never got to call
+   * {@link #releaseSurfaceProvider} (activity finished or was killed while the preview was open),
+   * CameraX keeps feeding frames into the producer's ImageReader, and Flutter schedules an engine
+   * frame for each one — after the engine has detached that throws "FlutterJNI is not attached to
+   * native" on the main thread and kills the app. A released producer ignores further images.
+   */
+  void releaseAllSurfaceProducers() {
+    for (Map.Entry<Preview, TextureRegistry.SurfaceProducer> entry : surfaceProducers.entrySet()) {
+      try {
+        entry.getKey().setSurfaceProvider(null);
+      } catch (RuntimeException ignored) {
+        // Best effort: the use case may already be unbound.
+      }
+      entry.getValue().release();
+    }
+    surfaceProducers.clear();
+  }
+
   @Override
   public boolean surfaceProducerHandlesCropAndRotation(@NonNull Preview pigeonInstance) {
     final TextureRegistry.SurfaceProducer surfaceProducer = surfaceProducers.get(pigeonInstance);
