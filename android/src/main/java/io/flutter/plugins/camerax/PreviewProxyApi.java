@@ -74,8 +74,9 @@ class PreviewProxyApi extends PigeonApiPreview {
     final Preview.SurfaceProvider surfaceProvider =
         createSurfaceProvider(surfaceProducer, systemServicesManager);
 
-    pigeonInstance.setSurfaceProvider(surfaceProvider);
+    // Track first: the provider declines requests for producers no longer in the map.
     surfaceProducers.put(pigeonInstance, surfaceProducer);
+    pigeonInstance.setSurfaceProvider(surfaceProvider);
 
     return surfaceProducer.id();
   }
